@@ -1,230 +1,150 @@
 <!doctype html>
 <!--
 Copyright 2018 The Immersive Web Community Group
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Licensed under the MIT License
 -->
 <html>
-  <head>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
-    <meta name='mobile-web-app-capable' content='yes'>
-    <meta name='apple-mobile-web-app-capable' content='yes'>
-    <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
-    <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
-    <link rel='stylesheet' href='css/common.css'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover'>
+  <meta name='mobile-web-app-capable' content='yes'>
+  <meta name='apple-mobile-web-app-capable' content='yes'>
+  <link rel='icon' type='image/png' sizes='3232' href='favicon-32x32.png'>
+  <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
+  <link rel='stylesheet' href='css/common.css'>
+  <title>Seguimiento a escala de la habitacion (Magic Window)</title>
+</head>
+<body>
+  <header>
+    <details open>
+      <summary>Escala de habitacion</summary>
+      <p>
+        Haz clic abajo para iniciar. Explora el entorno en 360 grados arrastrando tu dedo en la pantalla del celular o con el ratón en la computadora.
+        <a class="back" href="./">Back</a>
+      </p>
+    </details>
+  </header>
 
-    <title>Seguimiento a escala de la habitacion</title>
-  </head>
-  <body>
-    <header>
-      <details open>
-        <summary>Escala de habitacion</summary>
-        <p>
-          Este ejemplo demuestra el uso de un espacio de referencia de "piso local" para 
-          proporcionar seguimiento a escala de la habitación.
-          <a class="back" href="./">Back</a>
-        </p>
-      </summary>
-    </header>
-    <script type="module">
-      import {WebXRButton} from './js/util/webxr-button.js';
-      import {Scene} from './js/render/scenes/scene.js';
-      import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
-      import {Gltf2Node} from './js/render/nodes/gltf2.js';
-      import {SkyboxNode} from './js/render/nodes/skybox.js';
-      import {BoundsRenderer} from './js/render/nodes/bounds-renderer.js';
-      import {InlineViewerHelper} from './js/util/inline-viewer-helper.js';
-      import {QueryArgs} from './js/util/query-args.js';
+  <script type="module">
+    import { WebXRButton } from './js/util/webxr-button.js';
+    import { Scene } from './js/render/scenes/scene.js';
+    import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
+    import { Gltf2Node } from './js/render/nodes/gltf2.js';
+    import { SkyboxNode } from './js/render/nodes/skybox.js';
+    import { InlineViewerHelper } from './js/util/inline-viewer-helper.js';
+    import { QueryArgs } from './js/util/query-args.js';
 
-      // Si se solicita, utilizar polyfill para proveer el soporte de dispositivos móviles
-      // y dispositivos que soportan unicamente WebVR.
-      import WebXRPolyfill from './js/third-party/webxr-polyfill/build/webxr-polyfill.module.js';
-      if (QueryArgs.getBool('usePolyfill', true)) {
-        let polyfill = new WebXRPolyfill(); // polyfill y un ejemplo de codigo para construir aplicaciones de realidad aumentada (AR)
-                                            //  y realidad virtual (VR) usando WebXR.
-      }
+    import WebXRPolyfill from './js/third-party/webxr-polyfill/build/webxr-polyfill.module.js';
+    if (QueryArgs.getBool('usePolyfill', true)) {
+      let polyfill = new WebXRPolyfill();
+    }
 
-      // Variables globales para XR
-      let xrButton = null;
-      let xrImmersiveRefSpace = null;
-      let inlineViewerHelper = null;
+    let xrButton = null;
+    let xrSession = null;
+    let xrRefSpace = null;
+    let inlineViewerHelper = null;
 
-      // Variables locales de escena para GL.
-      let gl = null;
-      let renderer = null;
-      let scene = new Scene();
-      scene.addNode(new Gltf2Node({url: 'media/gltf/camp/ciudad.gltf'})); // Cargando el modelo
-      scene.addNode(new SkyboxNode({url: 'media/textures/textura.png'})); // Nodo textura
-      scene.standingStats(true);
+    let gl = null;
+    let renderer = null;
+    let scene = new Scene();
 
-      let boundsRenderer = null;
+    scene.addNode(new Gltf2Node({url: 'media/gltf/camp/ciudad.gltf'}));
+    scene.addNode(new SkyboxNode({url: 'media/textures/textura.png'}));
+    scene.standingStats(true);
 
-      function initXR() {  // inicia soporte de realidad aumentada
-        xrButton = new WebXRButton({  // Solicitando sesion de realidad virtual con el boton
-          onRequestSession: onRequestSession,
-          onEndSession: onEndSession
-        });
-        document.querySelector('header').appendChild(xrButton.domElement);
-        // Si el navegador proporciona una experiencia XR
-        if (navigator.xr) {
-          // entonces el navegador proporciona la experiencia VR
-          navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-            xrButton.enabled = supported;
-          });
-          // Ir a la funcion onSessionStarted    
-          navigator.xr.requestSession('inline').then(onSessionStarted);
-        }
-      }
+    function initXR() {
+      xrButton = new WebXRButton({
+        onRequestSession: onRequestSession,
+        onEndSession: onEndSession,
+        textEnterXR: "INICIAR PANORAMA",
+        textXRNotFound: "XR NO SOPORTADO",
+        textLeaveXR: "SALIR"
+      });
+      document.querySelector('header').appendChild(xrButton.domElement);
 
-      function onRequestSession() {
-        return navigator.xr.requestSession('immersive-vr', {
-            // La experiencia del usuario requiere cuando menos de un local-floor
-            // del espacio de referencia  (el cual estara disponible en un dispositivo 3DoF)
-            // pero opcionalmente se puede utilizar un espacio de referencia bounded-floor
-            // cuando se encuentra disponible.
-            requiredFeatures: ['local-floor'],  // El usuario no se mueve en el espacio y local-floor de pie
-
-            optionalFeatures: ['bounded-floor'] //  Una experiencia limitadabounded-floor ( ) es una en la que el usuario 
-                                                // se moverá alrededor de su entorno físico para interactuar completamente, 
-                                                // pero no necesitará viajar más allá de un límite fijo definido por el hardware XR. 
-        }).then((session) => {
-          xrButton.setSession(session);
-          session.isImmersive = true;  // Sesion inmersiva
-          onSessionStarted(session);
+      if (navigator.xr) {
+        navigator.xr.isSessionSupported('inline').then((supported) => {
+          xrButton.enabled = supported;
         });
       }
+    }
 
-      function initGL() {
-        if (gl)
-          return;
+    function onRequestSession() {
+      // SOLUCIÓN AL FONDO NEGRO: Al pedir una sesión inline, pasamos explícitamente la característica "viewer"
+      // Esto le otorga al navegador los permisos internos necesarios para instanciar la cámara en pantalla plana.
+      return navigator.xr.requestSession('inline', {
+        requiredFeatures: ['viewer']
+      }).then(onSessionStarted);
+    }
 
-        gl = createWebGLContext({
-          xrCompatible: true
-        });
-        document.body.appendChild(gl.canvas);
+    function onSessionStarted(session) {
+      xrSession = session;
+      xrButton.setSession(session);
+      session.addEventListener('end', onSessionEnded);
 
-        function onResize() { // Cambia el tamano del canvas en relacion con el dispositivo
-          gl.canvas.width = gl.canvas.clientWidth * window.devicePixelRatio;
-          gl.canvas.height = gl.canvas.clientHeight * window.devicePixelRatio;
-        }
-        window.addEventListener('resize', onResize);
-        onResize();
+      initGL();
 
-        renderer = new Renderer(gl);
+      let glLayer = new XRWebGLLayer(session, gl);
+      session.updateRenderState({ baseLayer: glLayer });
 
-        scene.setRenderer(renderer);
-      }
-
-      function onSessionStarted(session) {
-        session.addEventListener('end', onSessionEnded);
-
-        initGL();
-
-        let glLayer = new XRWebGLLayer(session, gl);
-        session.updateRenderState({ baseLayer: glLayer });
-
-        function onRefSpaceCreated(refSpace) {
-          if (session.isImmersive) {
-            xrImmersiveRefSpace = refSpace;
-          } else {
-            // Si usamos un espacio de referencia del visor, necesitamos desplazar 
-            // el origen ligeramente hacia abajo para colocar la cámara aproximadamente 
-            // a la altura correcta. (Aquí la movemos 1,6 metros, que es *muy* 
-            // aproximadamente la altura de los ojos de un adulto promedio).
-            inlineViewerHelper = new InlineViewerHelper(gl.canvas, refSpace);
-            inlineViewerHelper.setHeight(1.6);
-
-            // Puedes lograr lo mismo sin la clase auxiliar simplemente compensando 
-            // el espacio de referencia con un valor y negativo:
-            // refSpace = refSpace.getOffsetReferenceSpace(new XRRigidTransform({y: -1.6}));
-          }
-          session.requestAnimationFrame(onXRFrame);
-        }
-
-        if (session.isImmersive) {
-          // Intente obtener un espacio de referencia de "piso delimitado", 
-          // que alineará el piso físico del usuario con Y=0 y proporcionará 
-          // límites que indiquen dónde puede caminar el usuario de manera segura.
-          session.requestReferenceSpace('bounded-floor').then((refSpace) => {
-            onRefSpaceCreated(refSpace);
-
-            if (!boundsRenderer) {
-              boundsRenderer = new BoundsRenderer(refSpace);
-              scene.addNode(boundsRenderer);
-            } else {
-              boundsRenderer.boundedRefSpace = refSpace;
-            }
-
-            refSpace.onreset = (evt) => {
-              boundsRenderer.boundedRefSpace = evt.referenceSpace;
-            }
-          }).catch(() => {
-            // ¿Y en donde se coloca la textura en relación del modelo (piso local)?
-            // Si no se admite un espacio de referencia delimitado, se recurre a 
-            // un espacio de referencia del piso local.
-            // Esto sigue proporcionando un espacio relativo al piso y 
-            // siempre será compatible con sesiones inmersivas.
-            // Sin embargo, no proporciona límites y, por lo general, 
-            // se espera que el usuario permanezca en un punto fijo.
-            // Si el dispositivo no puede determinar el nivel del piso (por ejemplo, 
-            // con un dispositivo 3DoF), devolverá un espacio de planta local emulado, 
-            // donde la vista se traslada hacia arriba mediante una altura estática para 
-            // que la escena se renderice aproximadamente en el punto correcto.
-            console.log('Falling back to local-floor reference space');
-            session.requestReferenceSpace('local-floor').then(onRefSpaceCreated);
-          });
-        } else {
-          session.requestReferenceSpace('viewer').then(onRefSpaceCreated);
-        }
-      }
-
-      function onEndSession(session) {
-        session.end();
-      }
-
-      function onSessionEnded(event) {
-        if (event.session.isImmersive) {
-          xrButton.setSession(null);
-        }
-      }
-
-      function onXRFrame(t, frame) {
-        let session = frame.session;
-        let refSpace = session.isImmersive ?
-                         xrImmersiveRefSpace :
-                         inlineViewerHelper.referenceSpace;
-        let pose = frame.getViewerPose(refSpace);
-
-        scene.startFrame();
+      // Solicitamos el espacio de referencia básico que permite inicializar el lienzo
+      session.requestReferenceSpace('viewer').then((refSpace) => {
+        xrRefSpace = refSpace;
+        
+        // Inicializamos el asistente para poder mover la cámara arrastrando con el dedo o con el ratón
+        inlineViewerHelper = new InlineViewerHelper(gl.canvas, refSpace);
+        inlineViewerHelper.setHeight(1.6); 
 
         session.requestAnimationFrame(onXRFrame);
-        // Cada cuadro XR usa básicamente el mismo bucle de renderizado, por lo que, 
-        // para mantener el código de muestra enfocado en las partes interesantes, 
-        // la mayoría de las muestras posteriores a este comenzarán a usar esta función
-        // helper para ocultar la mayor parte de la lógica de renderizado.
-        scene.drawXRFrame(frame, pose);
+      });
+    }
 
-        scene.endFrame();
+    function initGL() {
+      if (gl) return;
+      gl = createWebGLContext({ xrCompatible: true });
+      document.body.appendChild(gl.canvas);
+
+      onResize();
+      window.addEventListener('resize', onResize);
+
+      renderer = new Renderer(gl);
+      scene.setRenderer(renderer);
+    }
+
+    function onResize() {
+      if (!gl) return;
+      gl.canvas.width = gl.canvas.clientWidth * window.devicePixelRatio;
+      gl.canvas.height = gl.canvas.clientHeight * window.devicePixelRatio;
+    }
+
+    function onEndSession(session) {
+      session.end();
+    }
+
+    function onSessionEnded(event) {
+      xrButton.setSession(null);
+      xrSession = null;
+    }
+
+    function onXRFrame(t, frame) {
+      let session = frame.session;
+      
+      // Consultamos la pose generada a través de las interacciones táctiles/ratón calculadas por el helper
+      let refSpace = inlineViewerHelper ? inlineViewerHelper.referenceSpace : xrRefSpace;
+      let pose = frame.getViewerPose(refSpace);
+
+      scene.startFrame();
+      session.requestAnimationFrame(onXRFrame);
+
+      if (pose) {
+        // Renderizamos de manera segura la capa de dibujo
+        scene.drawXRFrame(frame, pose);
       }
 
-      // Iniciando aplicacion XR
-      initXR();
-    </script>
-  </body>
+      scene.endFrame();
+    }
+
+    initXR();
+  </script>
+</body>
 </html>
